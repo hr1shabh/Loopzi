@@ -1,5 +1,20 @@
 import type { Metadata } from "next";
+import { Space_Grotesk, DM_Sans } from "next/font/google";
 import "./globals.css";
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-heading",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-body",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "Loopzi — Build Consistency, Daily",
@@ -14,7 +29,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body
+        className={`${spaceGrotesk.variable} ${dmSans.variable} antialiased`}
+      >
+        {children}
+      </body>
     </html>
   );
 }
