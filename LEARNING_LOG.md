@@ -4,6 +4,38 @@
 
 ---
 
+## Step 1 · Part 3 — PWA Configuration (Feb 28, 2026)
+
+### What was done
+Made the app installable as a Progressive Web App on iPhone and desktop. Added offline support and push notification groundwork.
+
+### Changes
+
+| File | What & Why |
+|---|---|
+| `src/app/manifest.ts` | Next.js 16 native manifest — exports a function that returns `MetadataRoute.Manifest`. Next.js auto-generates the JSON and links it in `<head>`. `start_url: "/today"` means the PWA opens to the daily check-in, not the landing page. `display: "standalone"` removes the browser chrome (URL bar, etc.). |
+| `public/sw.js` | Service worker — plain JavaScript (NOT TypeScript, because browsers load it directly). Handles 3 events: `install` (cache offline page), `fetch` (network-first with offline fallback), and `push` (show notifications). `skipWaiting()` + `clients.claim()` make new versions activate immediately. |
+| `src/app/offline/page.tsx` | Offline fallback page. Uses `"use client"` because it has an `onClick` handler — Server Components can't have event handlers. |
+| `src/hooks/use-service-worker.ts` | Custom React hook that registers `sw.js`. Uses `useEffect` with empty deps `[]` so it runs exactly once on mount. |
+| `src/components/service-worker-registrar.tsx` | Thin wrapper component that calls the hook. Returns `null` (no visible UI). Placed in root layout so SW registration happens on every page load. |
+| `src/app/layout.tsx` | Added `apple-touch-icon` for iOS home screen icon, `appleWebApp` metadata for iOS PWA behavior, and `viewport` export with `viewportFit: "cover"` for edge-to-edge display on notched iPhones. |
+| `public/icons/icon-192x192.png` | App icon at 192×192 (used in manifest + notifications). |
+| `public/icons/icon-512x512.png` | App icon at 512×512 (used in manifest for splash screen). |
+
+### Bugs fixed during verification
+1. **`/offline` returned 500**: Missing `"use client"` directive. In Next.js, any component that uses browser APIs (event handlers, `useState`, `useEffect`, etc.) must be a Client Component.
+2. **Service Worker failed to register**: Original `sw.js` had TypeScript syntax (`as unknown as`, type annotations). Files in `public/` are served directly to the browser — they must be plain JS.
+
+### Concepts learned
+- **PWA = Manifest + Service Worker + HTTPS.** That's all you need. No special library required in Next.js 16.
+- **`manifest.ts` vs `manifest.json`**: The `.ts` version is a function so you can dynamically generate values (e.g., different icons for dev/prod). Next.js serves it at `/manifest.webmanifest` automatically.
+- **Service Worker lifecycle**: `install` → `activate` → `fetch`. New versions wait for all tabs to close unless you call `skipWaiting()`. `clients.claim()` lets the new SW control existing tabs immediately.
+- **Network-first strategy**: Try the network first; if it fails (offline), fall back to cache. Good for dynamic content. (Cache-first is better for static assets.)
+- **`viewportFit: "cover"`**: Tells the browser to extend content into safe areas (behind the notch/Dynamic Island on iPhone). Without this, there's a blank gap at the top.
+- **Server vs Client Components**: Server Components (default in Next.js App Router) run on the server and can't have interactivity. Any component with `useState`, `useEffect`, event handlers, or browser APIs must use `"use client"`.
+
+---
+
 ## Step 1 · Part 2 — shadcn/ui + Google Fonts + Design Tokens (Feb 28, 2026)
 
 ### What was done
