@@ -4,6 +4,41 @@
 
 ---
 
+## Step 2 — Supabase Setup & Database Schema (Feb 28, 2026)
+
+### What was done
+Prepared the full Supabase backend integration — packages, client helpers, auth middleware, and the complete SQL migration with 5 tables and RLS policies.
+
+### Changes
+
+| File | What & Why |
+|---|---|
+| `.env.local.example` | Template for Supabase credentials. `NEXT_PUBLIC_` prefix exposes values to the browser — safe because the anon key is meant to be public. RLS protects the data, not the key. |
+| `src/lib/supabase/client.ts` | Browser-side client for Client Components. Uses `createBrowserClient` from `@supabase/ssr`. One function, returns a configured Supabase instance. |
+| `src/lib/supabase/server.ts` | Server-side client for Server Components/Route Handlers. Integrates with Next.js `cookies()` so auth sessions are read from HTTP cookies (not localStorage). The `try/catch` in `setAll` handles the fact that Server Components can't set cookies (middleware does it instead). |
+| `src/middleware.ts` | Runs on EVERY request. Its sole job: call `supabase.auth.getUser()` to refresh the JWT token before it expires (default: 1 hour). Without this, users get silently logged out. The `matcher` config excludes static assets. |
+| `supabase/migrations/001_initial_schema.sql` | All 5 database tables + indexes + RLS policies + auto-update trigger. This SQL is pasted into the Supabase SQL Editor. |
+
+### Database Schema
+
+| Table | Purpose | Key Columns |
+|---|---|---|
+| `habits` | User's habits | `name`, `period` (daily/weekly), `target_per_period`, `is_archived` |
+| `check_ins` | Each completion event | `habit_id`, `date` (local), `completed_at` (UTC) |
+| `streaks` | Cached streak data | `current`, `best`, `last_completed_date` |
+| `push_subscriptions` | Web Push endpoints | `endpoint`, `p256dh`, `auth` (keys for encryption) |
+| `reminder_preferences` | Per-user settings | `timezone`, `push_enabled`, `email_enabled`, `default_reminder_time` |
+
+### Concepts learned
+- **RLS (Row-Level Security)**: Postgres feature where the database itself enforces "who can see what." The policy `auth.uid() = user_id` means every query automatically filters to only the logged-in user's rows. Even if someone bypasses the frontend, the DB rejects unauthorized reads.
+- **Why two clients?** Browser client uses cookies managed by the browser itself. Server client must manually read/write cookies via Next.js `cookies()` API — they're in different execution contexts.
+- **Middleware in Next.js**: A function that runs before every route match. Placed at `src/middleware.ts` (must be this exact path). The `matcher` config controls which routes trigger it.
+- **`TIMESTAMPTZ` vs `DATE`**: `TIMESTAMPTZ` stores an absolute moment in time (UTC). `DATE` stores just a date without timezone — we use it for `check_ins.date` because "Feb 28" means "Feb 28 in the user's timezone," not UTC.
+- **Foreign Keys + `ON DELETE CASCADE`**: When a user is deleted from `auth.users`, all their habits, check-ins, streaks, etc. are automatically deleted too. No orphaned data.
+- **Trigger function**: `update_updated_at()` runs automatically before every UPDATE on the `habits` table, setting `updated_at = now()`. You never have to remember to set it manually.
+
+---
+
 ## Step 1 · Part 3 — PWA Configuration (Feb 28, 2026)
 
 ### What was done
