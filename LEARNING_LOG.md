@@ -4,6 +4,39 @@
 
 ---
 
+## Step 4 — Habit CRUD + Onboarding (Feb 28, 2026)
+
+### What was done
+Built the full habit management system — API routes for CRUD, a polished bottom sheet form with emoji/color pickers, onboarding for first-time users, and a bottom navigation bar for all app pages.
+
+### Changes
+
+| File | What & Why |
+|---|---|
+| `src/lib/validations/habit.ts` | Zod schemas for habit create/update. `createHabitSchema` validates name (1-50 chars), period (`daily`/`weekly`), targetPerPeriod (1-99). `updateHabitSchema` extends it with `.partial()` — all fields become optional for PATCH updates. Types are inferred from schemas via `z.infer<>`. |
+| `src/app/api/habits/route.ts` | `GET` fetches all habits (filterable by `?archived=true`). `POST` validates with Zod, inserts into DB, and also creates an initial `streaks` row with zeroed counters. Auth is checked via `getUser()` and RLS provides defense-in-depth. |
+| `src/app/api/habits/[id]/route.ts` | `PATCH` endpoint for editing or archiving. Maps camelCase inputs (`targetPerPeriod`) to snake_case DB columns (`target_per_period`). Uses both explicit `user_id` check AND RLS for double safety. |
+| `src/components/habit-form-sheet.tsx` | Bottom sheet form using shadcn's `Sheet` component (`side="bottom"`). Includes emoji picker (20 curated emojis), color picker (6 preset colors), frequency radio (Daily/Weekly), target input, and reminder time. Uses `react-hook-form` with `zodResolver` for validation. Reusable for both create and edit via an optional `habit` prop. |
+| `src/app/(app)/habits/page.tsx` | Habits management page. Shows onboarding with 4 suggested templates when user has zero habits. Lists active habits with edit/archive. Includes "Show archived" toggle with restore button. |
+| `src/app/(app)/today/page.tsx` | Placeholder `/today` page with server-side greeting using the user's name from OAuth metadata. Will be fully built in Step 5. |
+| `src/components/bottom-nav.tsx` | Fixed bottom navigation bar with 5 tabs (Today, Habits, History, Insights, Me). Uses `usePathname()` to highlight the active route. Coral accent color for active tab. |
+| `src/app/(app)/layout.tsx` | Route group layout that wraps all authenticated pages with the bottom nav and bottom padding (`pb-20`). |
+| `src/app/globals.css` | Added `.safe-bottom` utility for iPhone safe area insets. |
+| `src/app/auth/callback/route.ts` | **Bug fix**: Rewrote to create a custom Supabase client that writes session cookies directly onto the `NextResponse.redirect()` object. The previous version used `cookies()` from `next/headers`, which doesn't transfer cookies to manually created redirect responses. |
+
+### Bugs fixed
+1. **Auth redirect loop**: After Google OAuth, users were redirected to `/today` but immediately sent back to `/auth/login`. Root cause: the callback route used the shared `createClient()` from `server.ts` which calls `cookies().set()`, but `NextResponse.redirect()` creates a *new* response object — so the session cookies were lost. Fix: create a Supabase client in the callback that writes directly to `response.cookies.set()`.
+
+### Concepts learned
+- **Zod `.partial()`**: Creates a new schema where all fields are optional. Perfect for PATCH endpoints where you only send changed fields. `z.infer<>` extracts the TypeScript type from the schema — single source of truth for validation AND types.
+- **react-hook-form + zodResolver**: `useForm({ resolver: zodResolver(schema) })` connects Zod validation to the form. `register("fieldName")` returns `{ onChange, onBlur, ref, name }` props that wire up an input automatically. `{ valueAsNumber: true }` converts string inputs to numbers.
+- **Route Groups `(app)`**: Folders wrapped in parentheses like `(app)` don't affect the URL. `src/app/(app)/today/page.tsx` still serves `/today`. Used to share a layout (bottom nav) across authenticated pages without adding a URL segment.
+- **`response.cookies.set()` vs `cookies().set()`**: In Route Handlers, `cookies()` from `next/headers` writes to an internal response. But if you return `NextResponse.redirect()`, that's a *different* response object — the cookies don't transfer. You must write directly to the response you return.
+- **CSS `env(safe-area-inset-bottom)`**: Environment variable provided by iPhone Safari for the area below the home indicator bar. `padding-bottom: env(safe-area-inset-bottom, 0px)` adds padding on iPhones and falls back to 0 on other devices.
+- **`has-[:checked]` CSS selector**: Tailwind utility that styles a parent based on a child's state. Used for the frequency radio buttons: `has-[:checked]:border-coral` highlights the selected option without JavaScript.
+
+---
+
 ## Step 3 — Authentication: OAuth + Magic Link (Feb 28, 2026)
 
 ### What was done
