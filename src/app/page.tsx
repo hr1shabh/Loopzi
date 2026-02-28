@@ -32,7 +32,7 @@ export default function Home() {
             size="lg"
             className="rounded-xl bg-coral px-8 py-6 text-base font-semibold text-white shadow-lg transition-all hover:bg-coral-dark hover:shadow-xl active:scale-95"
           >
-            <a href="/today">Get Started →</a>
+            <a href="/auth/login">Get Started →</a>
           </Button>
         </div>
 

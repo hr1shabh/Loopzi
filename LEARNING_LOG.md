@@ -4,6 +4,45 @@
 
 ---
 
+## Step 3 — Authentication: OAuth + Magic Link (Feb 28, 2026)
+
+### What was done
+Built the full authentication flow — Google OAuth, email magic link sign-in, session-aware middleware with route protection, and a polished login page.
+
+### Changes
+
+| File | What & Why |
+|---|---|
+| `src/app/auth/actions.ts` | Server Actions for auth. `signInWithOAuth("google")` initiates the OAuth flow by calling `supabase.auth.signInWithOAuth()` and redirecting to Google's consent screen. `signInWithMagicLink(email)` sends a one-time login link via `supabase.auth.signInWithOtp()`. `signOut()` clears the session and redirects to login. Server Actions are `"use server"` functions — they run on the server but can be called directly from Client Components. |
+| `src/app/auth/callback/route.ts` | Route Handler for OAuth redirects. After Google auth or magic link click, Supabase redirects here with a `code` query parameter. We call `exchangeCodeForSession(code)` to convert it into a session cookie, then redirect to `/today`. This is a Route Handler (not a page) — it processes the request and redirects, never renders UI. |
+| `src/app/auth/login/page.tsx` | Login page UI. A `"use client"` component with three auth options: Google OAuth button, email magic link input, and a success state shown after sending the link. Uses `useTransition()` for non-blocking form submissions. The page has decorative background gradients, the Loopzi brand header, and a card-based layout. |
+| `src/middleware.ts` | Updated to add route protection. Now captures the `user` from `getUser()` (previously just called it for token refresh). Defines `PROTECTED_ROUTES` (`/today`, `/habits`, etc.) and `AUTH_ROUTES` (`/auth/login`). Unauthenticated users on protected routes → redirect to login. Authenticated users on `/` or login page → redirect to `/today`. |
+| `src/app/page.tsx` | Updated CTA button from `/today` → `/auth/login` so unauthenticated users land on the login page instead of a 404. |
+
+### Auth Flow Diagram
+
+```
+User clicks "Continue with Google"
+  → Server Action calls supabase.auth.signInWithOAuth()
+  → Supabase returns Google's consent URL
+  → Server Action redirects browser to Google
+  → User signs in on Google
+  → Google redirects to Supabase callback URL
+  → Supabase redirects to /auth/callback?code=xxx
+  → Route Handler exchanges code for session cookie
+  → Redirect to /today (authenticated!)
+```
+
+### Concepts learned
+- **Server Actions (`"use server"`)**: Functions that run on the server but are callable from client-side code. Next.js handles the network request automatically. Useful for auth because sensitive operations (session creation) stay server-side.
+- **Route Handlers**: Files named `route.ts` in the `app/` directory that handle raw HTTP requests (like Express routes). They don't render UI — they return `NextResponse` (redirect, JSON, etc.). Used for the OAuth callback because it needs to process a request, not render a page.
+- **OAuth flow**: A multi-step redirect dance: App → Provider (Google) → Supabase → App callback. The `code` parameter is a one-time token that gets exchanged for a real session. This "authorization code" flow is more secure than passing tokens directly through the browser URL.
+- **`useTransition()`**: React 19 hook for non-urgent state updates. Wrapping async calls in `startTransition()` keeps the UI responsive — the button shows a loading spinner without blocking other interactions.
+- **Middleware route protection**: Checking auth state in middleware (not in each page) is the recommended pattern because middleware runs before the page renders. Without it, protected pages would flash briefly before redirecting.
+- **`request.nextUrl.clone()`**: Must clone the URL before modifying it for redirects. The original `nextUrl` is read-only.
+
+---
+
 ## Step 2 — Supabase Setup & Database Schema (Feb 28, 2026)
 
 ### What was done

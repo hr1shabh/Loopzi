@@ -1,12 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/** Routes that require authentication */
+const PROTECTED_ROUTES = ["/today", "/habits", "/history", "/insights", "/settings"];
+
+/** Routes that should redirect authenticated users to /today */
+const AUTH_ROUTES = ["/auth/login"];
+
 /**
- * Middleware that refreshes the Supabase auth session on every request.
- *
- * Without this, the session would expire after 1 hour and the user
- * would be silently logged out. The middleware reads the session cookie,
- * refreshes the token if needed, and writes the updated cookie back.
+ * Middleware that:
+ * 1. Refreshes the Supabase auth session on every request.
+ * 2. Protects routes — unauthenticated users are redirected to /auth/login.
+ * 3. Redirects authenticated users away from auth pages to /today.
  */
 export async function middleware(request: NextRequest) {
     let supabaseResponse = NextResponse.next({
@@ -37,8 +42,39 @@ export async function middleware(request: NextRequest) {
     );
 
     // Refresh the session — this is the core purpose of this middleware.
-    // Do NOT remove this line. It refreshes the auth token silently.
-    await supabase.auth.getUser();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    const pathname = request.nextUrl.pathname;
+    const isAuthenticated = !!user;
+
+    // Unauthenticated users trying to access protected routes → redirect to login
+    const isProtectedRoute = PROTECTED_ROUTES.some(
+        (route) => pathname === route || pathname.startsWith(`${route}/`)
+    );
+    if (!isAuthenticated && isProtectedRoute) {
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = "/auth/login";
+        return NextResponse.redirect(loginUrl);
+    }
+
+    // Authenticated users on "/" → redirect to /today
+    if (isAuthenticated && pathname === "/") {
+        const todayUrl = request.nextUrl.clone();
+        todayUrl.pathname = "/today";
+        return NextResponse.redirect(todayUrl);
+    }
+
+    // Authenticated users on auth pages → redirect to /today
+    const isAuthRoute = AUTH_ROUTES.some(
+        (route) => pathname === route || pathname.startsWith(`${route}/`)
+    );
+    if (isAuthenticated && isAuthRoute) {
+        const todayUrl = request.nextUrl.clone();
+        todayUrl.pathname = "/today";
+        return NextResponse.redirect(todayUrl);
+    }
 
     return supabaseResponse;
 }
