@@ -54,3 +54,11 @@ export interface TodayDashboardVM {
   habits: HabitCardVM[];
   completionRate: number; // 0..1
 }
+
+// ─── API Response Types ───────────────────────────────────
+
+export interface CheckInResponse {
+  todayCount: number;
+  completedToday: boolean;
+  streak: HabitStreak;
+}

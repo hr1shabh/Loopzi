@@ -4,6 +4,40 @@
 
 ---
 
+## Step 5 — Today Dashboard + One-Tap Check-In (Mar 1, 2026)
+
+### What was done
+Built the core daily experience — the Today dashboard where users see their habits, tap to check in, watch progress update in real time, and see streak badges. Includes two new API endpoints and optimistic UI with animations.
+
+### Changes
+
+| File | What & Why |
+|---|---|
+| `src/lib/validations/check-in.ts` | Zod schema for check-in creation. Validates `date` (must be `YYYY-MM-DD` regex) and optional `note` (max 500 chars). The `habitId` comes from the URL path param, not the body — follows REST conventions. |
+| `src/types/index.ts` | Added `CheckInResponse` interface — the shape returned by the check-in POST endpoint: `{ todayCount, completedToday, streak }`. Keeps the API contract typed end-to-end. |
+| `src/app/globals.css` | Added `@keyframes check-in-pop` animation — a satisfying bounce effect (`scale(0) → 1.3 → 0.9 → 1`) with a custom `cubic-bezier(0.34, 1.56, 0.64, 1)` easing that overshoots then settles. Used on the green checkmark when a habit is completed. No extra dependency needed — pure CSS. |
+| `src/app/api/today/route.ts` | `GET /api/today?date=YYYY-MM-DD` — the dashboard data endpoint. Runs 4 Supabase queries in parallel via `Promise.all`: active habits, today's check-ins, this week's check-ins (for weekly habits), and streaks. Merges results in JS using `Map` lookups, builds `HabitCardVM[]`, computes `completionRate`, and returns the full `TodayDashboardVM`. The client sends its local date so the server uses the correct timezone. |
+| `src/app/api/habits/[id]/check-ins/route.ts` | `POST /api/habits/:id/check-ins` — creates a check-in. Validates body with Zod, verifies habit ownership + not archived, counts existing check-ins for the period (daily = today, weekly = Mon–Sun range), and returns **409** if target already reached. After inserting, does a basic streak update: compares `last_completed_date` to today — if yesterday, continues streak; if gap, resets to 1. Updates `best = max(current, best)`. |
+| `src/components/habit-card.tsx` | Interactive habit card component. Shows emoji (with colored background), name, progress counter (`2/3`), and streak badge with flame icon. Action button varies: "Done" for single-target habits, "+1" for multi-target. Completed state: emerald-50 background tint, green checkmark with bounce animation, green text. Uses `cn()` for conditional class composition. |
+| `src/app/(app)/today/page.tsx` | Complete rewrite from server-component placeholder to full `"use client"` dashboard. Features: time-based greeting, overall progress bar (coral → emerald at 100%), habit card list, skeleton loaders, empty state with CTA. **Optimistic UI**: tapping check-in instantly updates the count/progress, then server response confirms with streak data. Uses `Set<string>` for `checkingIds` so multiple habits can be checked in simultaneously. `visibilitychange` listener re-fetches if the date rolls past midnight. |
+
+### Key patterns used
+- **`Promise.all` for parallel queries**: The `/api/today` endpoint fires 4 independent Supabase queries simultaneously instead of sequentially — significantly faster than waterfall.
+- **Optimistic updates**: UI updates immediately on tap, API call happens in background. On failure, reverts by re-fetching from server. This makes check-ins feel instant.
+- **`Set<string>` for concurrent loading states**: Instead of a single `checkingHabitId: string | null`, a Set allows multiple habits to show loading spinners simultaneously. Each habit's check-in is independent.
+- **Target cap enforcement (409)**: The server counts existing check-ins before inserting. If already at target, returns HTTP 409 Conflict. Prevents over-counting even with rapid taps.
+- **`localDateRef` + `visibilitychange`**: The user's local date is stored in a ref and rechecked when the tab regains focus. If the date changed (user left tab open past midnight), the dashboard re-fetches with the new date.
+
+### Concepts learned
+- **Optimistic UI pattern**: Update state immediately before the API responds. `setDashboard(prev => ...)` modifies the local state, then the `fetch` call confirms or reverts. This is a standard React pattern for perceived performance — the UI feels instant even on slow networks.
+- **HTTP 409 Conflict**: The correct status code for "this action conflicts with the current state." Used when a habit's target is already reached. More specific than 400 (bad request) — the request is valid, just not allowed *right now*.
+- **`new Date().toLocaleDateString("en-CA")`**: The `en-CA` locale formats dates as `YYYY-MM-DD` (ISO format). A clever trick to get ISO date strings without string manipulation or `toISOString().split("T")[0]` (which uses UTC, not local time).
+- **CSS `cubic-bezier` with values > 1**: The second control point `1.56` exceeds the 0–1 range, creating an "overshoot" effect where the animation goes *past* the target and bounces back. This is what makes the checkmark pop feel playful.
+- **`useRef` for mutable values**: `localDateRef` stores the current date without triggering re-renders. Unlike `useState`, updating a ref doesn't cause the component to re-render — perfect for values that are read (not displayed) on demand.
+- **Week range calculation**: To find Monday–Sunday for a given date: `dayOfWeek === 0 ? -6 : 1 - dayOfWeek` handles the Sunday edge case (JS `getDay()` returns 0 for Sunday). Monday is always offset from the current day of the week.
+
+---
+
 ## Step 4 — Habit CRUD + Onboarding (Feb 28, 2026)
 
 ### What was done
