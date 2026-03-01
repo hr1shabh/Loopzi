@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { validateStreak } from "@/lib/streaks";
 import type { Habit, HabitCardVM, HabitStreak, TodayDashboardVM } from "@/types";
 
 /**
@@ -109,12 +110,18 @@ export async function GET(request: Request) {
             : dailyCounts.get(habit.id) || 0;
         const targetToday = habit.targetPerPeriod;
 
-        const streak = streakMap.get(habit.id) || {
-            habitId: habit.id,
-            current: 0,
-            best: 0,
-            freezesLeft: 0,
-        };
+        const rawStreak = streakMap.get(habit.id);
+        const streak: HabitStreak = rawStreak
+            ? {
+                  ...rawStreak,
+                  current: validateStreak(
+                      habit.period,
+                      rawStreak.current,
+                      rawStreak.lastCompletedDate,
+                      date
+                  ),
+              }
+            : { habitId: habit.id, current: 0, best: 0, freezesLeft: 0 };
 
         return {
             habit,

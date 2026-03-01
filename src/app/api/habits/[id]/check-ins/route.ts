@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createCheckInSchema } from "@/lib/validations/check-in";
+import { computeStreakUpdate } from "@/lib/streaks";
 import type { CheckInResponse, HabitStreak } from "@/types";
 
 /**
@@ -126,14 +127,6 @@ export async function POST(
     const newCount = currentCount + 1;
     const completedToday = newCount >= habit.target_per_period;
 
-    // Basic streak update when target is met
-    let updatedStreak: HabitStreak = {
-        habitId,
-        current: 0,
-        best: 0,
-        freezesLeft: 0,
-    };
-
     // Fetch current streak
     const { data: streakRow } = await supabase
         .from("streaks")
@@ -142,48 +135,19 @@ export async function POST(
         .eq("user_id", user.id)
         .single();
 
-    if (streakRow) {
-        updatedStreak = {
-            habitId,
-            current: streakRow.current,
-            best: streakRow.best,
-            lastCompletedDate: streakRow.last_completed_date ?? undefined,
-            freezesLeft: streakRow.freezes_left,
-        };
-    }
+    let updatedStreak: HabitStreak = streakRow
+        ? {
+              habitId,
+              current: streakRow.current,
+              best: streakRow.best,
+              lastCompletedDate: streakRow.last_completed_date ?? undefined,
+              freezesLeft: streakRow.freezes_left,
+          }
+        : { habitId, current: 0, best: 0, freezesLeft: 0 };
 
     if (completedToday) {
-        const lastDate = streakRow?.last_completed_date;
-        let newCurrent = 1;
-
-        if (lastDate) {
-            // Check if the previous completion was yesterday (daily) or same week (weekly)
-            const lastDateObj = new Date(lastDate + "T00:00:00");
-            const todayObj = new Date(date + "T00:00:00");
-            const diffMs = todayObj.getTime() - lastDateObj.getTime();
-            const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-            if (isWeekly) {
-                // For weekly: streak continues if last completed within last 7 days
-                if (diffDays <= 7 && diffDays > 0) {
-                    newCurrent = (streakRow?.current || 0) + 1;
-                } else if (diffDays === 0) {
-                    // Same date — already counted, keep current streak
-                    newCurrent = streakRow?.current || 1;
-                }
-            } else {
-                // For daily: streak continues if last completed was yesterday
-                if (diffDays === 1) {
-                    newCurrent = (streakRow?.current || 0) + 1;
-                } else if (diffDays === 0) {
-                    // Same day — already counted, keep current streak
-                    newCurrent = streakRow?.current || 1;
-                }
-                // diffDays > 1 means gap → reset to 1
-            }
-        }
-
-        const newBest = Math.max(newCurrent, streakRow?.best || 0);
+        const { current: newCurrent, best: newBest, lastCompletedDate } =
+            computeStreakUpdate(habit.period, streakRow, date);
 
         await supabase
             .from("streaks")
@@ -192,7 +156,7 @@ export async function POST(
                 user_id: user.id,
                 current: newCurrent,
                 best: newBest,
-                last_completed_date: date,
+                last_completed_date: lastCompletedDate,
                 freezes_left: streakRow?.freezes_left || 0,
             })
             .eq("habit_id", habitId);
@@ -201,7 +165,7 @@ export async function POST(
             habitId,
             current: newCurrent,
             best: newBest,
-            lastCompletedDate: date,
+            lastCompletedDate,
             freezesLeft: streakRow?.freezes_left || 0,
         };
     }

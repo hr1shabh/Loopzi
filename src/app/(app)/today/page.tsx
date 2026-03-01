@@ -97,6 +97,14 @@ export default function TodayPage() {
                         ...card,
                         todayCount: newCount,
                         completedToday: newCompleted,
+                        // Optimistically bump streak when target is just met
+                        streak: newCompleted && !card.completedToday
+                            ? {
+                                  ...card.streak,
+                                  current: card.streak.current + 1,
+                                  best: Math.max(card.streak.current + 1, card.streak.best),
+                              }
+                            : card.streak,
                     };
                 });
                 const completedCount = updatedHabits.filter(

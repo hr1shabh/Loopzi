@@ -4,6 +4,33 @@
 
 ---
 
+## Step 6 — Streak Engine (Mar 1, 2026)
+
+### What was done
+Extracted streak logic from the inline check-in API route into a dedicated utility module (`src/lib/streaks.ts`), fixed stale streaks showing on dashboard load, corrected weekly streak semantics to use calendar weeks instead of a rolling 7-day window, and added optimistic streak updates on the Today page.
+
+### Changes
+
+| File | What & Why |
+|---|---|
+| `src/lib/streaks.ts` | **New file** — the streak engine utility. Three exports: `getMondayOfWeek(dateStr)` returns the Monday of any date's ISO week. `validateStreak(period, current, lastCompletedDate, today)` checks if a stored streak is still valid — returns 0 if it's decayed (user missed a day/week). `computeStreakUpdate(period, streakRow, checkInDate)` computes new `{ current, best, lastCompletedDate }` when a habit's target is met. All date math uses `Date.UTC()` to avoid local timezone pitfalls — dates are parsed as `YYYY-MM-DD` strings, diffs computed via integer division of UTC milliseconds. |
+| `src/app/api/today/route.ts` | Added streak validation on read. After fetching raw streaks from the DB, each one is passed through `validateStreak()` before building the `HabitCardVM`. If a user hasn't checked in for 3 days, the dashboard now correctly shows streak 0 instead of the stale DB value. No DB write needed — validation is read-only. |
+| `src/app/api/habits/[id]/check-ins/route.ts` | Replaced ~50 lines of inline streak computation (date diffing, daily/weekly branching, best tracking) with a single `computeStreakUpdate()` call. The route still handles the DB upsert, but the calculation is delegated to the utility. Also fixed weekly streaks: previously used `diffDays <= 7` (rolling window), now uses `getMondayOfWeek()` comparison (calendar weeks). |
+| `src/app/(app)/today/page.tsx` | Enhanced the optimistic update: when a check-in completes the target (`newCompleted && !card.completedToday`), the streak is also bumped immediately — `current + 1` and `best = max(current + 1, best)`. The flame badge now appears instantly on check-in instead of waiting for the server response. |
+
+### Key patterns used
+- **Validate-on-read (no decay writes)**: Instead of running a cron job or writing decayed streaks back to the DB, we validate streaks at read time in the `/api/today` endpoint. The DB stores the "last known good state," and the API adjusts it before returning. This avoids unnecessary writes and keeps the source of truth simple.
+- **UTC-only date math**: All date arithmetic uses `Date.UTC(y, m-1, d)` to construct timestamps, avoiding `new Date("2026-03-01")` which can interpret dates in local timezone on the server. Day diffs are computed as `(utcB - utcA) / 86_400_000` — integer division of milliseconds, no rounding surprises from DST.
+- **Calendar week comparison for weekly streaks**: Instead of checking if the last completion was "within 7 days" (a sliding window that could span parts of 3 different weeks), we compare the Monday of each date's week. `weekDiff === 1` means consecutive ISO weeks, `weekDiff === 0` means same week.
+
+### Concepts learned
+- **Stale streak problem**: When the streak engine only updates on check-in (write path), streaks never decay on their own. A user who had a 30-day streak but missed 2 weeks would still see "30" on the dashboard. The fix is to validate on the read path — check if `lastCompletedDate` is recent enough for the streak to still be alive.
+- **`Date.UTC()` vs `new Date()`**: `new Date("2026-03-01")` is interpreted as UTC in some environments but local time in others (the spec is ambiguous for date-only strings). `Date.UTC(2026, 2, 1)` is always UTC. For date-only arithmetic (no time component), this avoids off-by-one errors near midnight or DST transitions.
+- **ISO week boundaries**: ISO weeks run Monday–Sunday. To find Monday: `dayOfWeek === 0 ? -6 : 1 - dayOfWeek` (Sunday is a special case because `getUTCDay()` returns 0). Two dates are in the same ISO week if they share the same Monday.
+- **Optimistic streak updates**: The streak badge is a secondary piece of data (not the primary check-in count), but it still benefits from optimistic updates. The simple heuristic `current + 1` is correct most of the time — the server-confirmed value arrives ~200ms later and overwrites it if different.
+
+---
+
 ## Step 5 — Today Dashboard + One-Tap Check-In (Mar 1, 2026)
 
 ### What was done
