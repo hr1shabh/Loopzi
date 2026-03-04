@@ -4,6 +4,38 @@
 
 ---
 
+## Step 7 — History View (Mar 4, 2026)
+
+### What was done
+Built the History page — a monthly calendar heatmap showing completion intensity per day, a habit filter bar, month navigation, and a recent activity feed. Added a new API endpoint that runs 3 parallel queries and returns a `HistoryVM` view model, plus two new presentational components.
+
+### Changes
+
+| File | What & Why |
+|---|---|
+| `src/types/index.ts` | Added 4 new interfaces: `HistoryDaySummary` (completed/total per day), `HistoryActivityItem` (a single check-in enriched with habit metadata), `HistoryHabitOption` (for the filter chip list), and `HistoryVM` (top-level view model combining days map, recent activity, and habit list). Follows the existing View Model pattern from `TodayDashboardVM`. |
+| `src/app/api/history/route.ts` | **New file** — `GET /api/history?year=&month=&habitId=`. Authenticates via `supabase.auth.getUser()`, then fires 3 parallel queries with `Promise.all`: (1) active habits for filter chips + name/emoji lookup, (2) check-ins for the requested month filtered to date range, (3) last 20 check-ins ordered by `completed_at` for the activity feed. Builds the `days` map differently depending on mode: "all" counts distinct habits checked in per day vs total active habits; single-habit mode counts check-ins vs `target_per_period`. |
+| `src/components/calendar-heatmap.tsx` | **New file** — Monday-start calendar grid for a given month. Computes leading offset from the first day's weekday (`Sun=0` remapped to 6 for Monday-start), fills trailing nulls to complete the last row. Each day cell is color-coded by completion ratio: gray (0%), light emerald (partial), solid emerald (100%). Today gets a `ring-2 ring-coral` highlight. Includes a 3-item legend (None / Partial / Complete). |
+| `src/components/activity-list.tsx` | **New file** — Groups `HistoryActivityItem[]` by date using a single-pass loop (items arrive pre-sorted by `completed_at` desc). Renders date headers with smart labels ("Today", "Yesterday", or "Mar 4" format). Each item shows the habit emoji on a tinted background, habit name, optional note, and formatted time. Empty state shows a centered "No recent activity" message. |
+| `src/app/(app)/history/page.tsx` | **New file** — Client component that wires everything together. State: `currentYear`, `currentMonth`, `selectedHabitId`. Month navigation with `goToPrevMonth`/`goToNextMonth` (disables forward on current month). Horizontal scrollable habit filter chips (coral highlight for active, muted for inactive). Skeleton loaders while fetching. `fetchHistory` is wrapped in `useCallback` with `[year, month, habitId]` deps, triggered by `useEffect`. |
+
+### Key patterns used
+- **Parallel queries with `Promise.all`**: Same pattern as `/api/today` — 3 independent Supabase queries run simultaneously. Reduces total latency to the slowest single query.
+- **View Model pattern**: The API returns `HistoryVM` — a shape optimized for the UI, not raw DB rows. The server does all the joining, grouping, and counting so the client just renders.
+- **Conditional query building**: The Supabase query is built incrementally — `.eq("habit_id", habitId)` is only appended when filtering by a specific habit. Avoids separate code paths for "all" vs "single".
+- **Monday-start calendar grid**: The offset calculation `firstDayRaw === 0 ? 6 : firstDayRaw - 1` converts JS's Sunday-start (0=Sun) to Monday-start (0=Mon). Trailing nulls pad the grid to a multiple of 7.
+- **Skeleton loaders matching layout shape**: The loading state mimics the real UI structure (7-column grid for heatmap, stacked rectangles for activity list) so there's no layout shift when data arrives.
+
+### Concepts learned
+- **Heatmap color mapping by ratio**: Instead of binary "done/not done", the ratio `completed / total` creates a 3-tier scale (0, partial, full). A user can see at a glance which days they partially completed vs fully completed all habits.
+- **`new Date(year, month, 0).getDate()`**: Passing day `0` to the `Date` constructor returns the last day of the *previous* month. So `new Date(2026, 3, 0)` gives March 31. Standard trick to find days-in-month without a lookup table.
+- **Date range filtering with `.gte()` / `.lte()`**: Supabase's PostgREST operators map to SQL `>=` and `<=`. String comparison works on `YYYY-MM-DD` because ISO date format is lexicographically sortable.
+- **Single-pass grouping**: The activity list groups items by date in one loop — since items arrive sorted by `completed_at` desc, consecutive items with the same date naturally cluster. No `reduce()` or `Map` needed.
+- **Horizontal scroll with `overflow-x-auto`**: Habit filter chips can overflow on narrow screens. `overflow-x-auto` enables native horizontal scrolling, `scrollbar-hide` removes the scrollbar for cleaner mobile UX, and `shrink-0` prevents chips from compressing.
+- **`useCallback` for stable fetch references**: `fetchHistory` is wrapped in `useCallback` with `[currentYear, currentMonth, selectedHabitId]` deps. This ensures the `useEffect` only re-runs when those values change, avoiding infinite re-render loops.
+
+---
+
 ## Step 6 — Streak Engine (Mar 1, 2026)
 
 ### What was done

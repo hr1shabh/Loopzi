@@ -55,6 +55,36 @@ export interface TodayDashboardVM {
   completionRate: number; // 0..1
 }
 
+export interface HistoryDaySummary {
+  completed: number;
+  total: number;
+}
+
+export interface HistoryActivityItem {
+  id: string;
+  habitName: string;
+  emoji: string;
+  color: string;
+  date: ISODate;
+  completedAt: ISODateTime;
+  note?: string;
+}
+
+export interface HistoryHabitOption {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+}
+
+export interface HistoryVM {
+  month: number; // 1-12
+  year: number;
+  days: Record<ISODate, HistoryDaySummary>;
+  recentActivity: HistoryActivityItem[];
+  habits: HistoryHabitOption[];
+}
+
 // ─── API Response Types ───────────────────────────────────
 
 export interface CheckInResponse {
