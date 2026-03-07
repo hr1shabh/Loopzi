@@ -92,3 +92,25 @@ export interface CheckInResponse {
   completedToday: boolean;
   streak: HabitStreak;
 }
+
+// ─── Reminder / Settings ─────────────────────────────────
+
+export interface ReminderPreferences {
+  timezone: string;
+  pushEnabled: boolean;
+  emailEnabled: boolean;
+  defaultReminderTime: string; // "09:00"
+}
+
+export interface PushSubscriptionPayload {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+export interface SettingsVM {
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  preferences: ReminderPreferences;
+}

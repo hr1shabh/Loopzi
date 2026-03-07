@@ -6,7 +6,6 @@ import {
     CalendarCheck,
     LayoutGrid,
     History,
-    BarChart3,
     User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,7 +15,7 @@ const NAV_ITEMS = [
     { label: "Today", href: ROUTES.TODAY, icon: CalendarCheck },
     { label: "Habits", href: ROUTES.HABITS, icon: LayoutGrid },
     { label: "History", href: ROUTES.HISTORY, icon: History },
-    { label: "Insights", href: ROUTES.INSIGHTS, icon: BarChart3 },
+
     { label: "Me", href: ROUTES.SETTINGS, icon: User },
 ];
 

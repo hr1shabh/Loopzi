@@ -4,6 +4,67 @@
 
 ---
 
+## Step 8 — Notifications, Reminders & Settings (Mar 7, 2026)
+
+### What was done
+Built the full notifications and reminders system — a Settings page for user preferences, push notification registration, email reminders via Resend, and a cron-dispatched reminder engine that matches habits to the user's local time. Also added 4 new UI components, a Supabase admin client, validation schemas, and a Vercel cron config. Fixed the Insights tab 404 and a push subscription bug.
+
+### Changes
+
+| File | What & Why |
+|---|---|
+| `next.config.ts` | Added `images.remotePatterns` entry for `lh3.googleusercontent.com` so `next/image` can display Google OAuth avatars on the Settings page. Without this, Next.js blocks remote image loading by default. |
+| `package.json` | Added 3 new dependencies: `web-push` (sends VAPID-based Web Push notifications), `resend` (sends emails via the Resend API), and `@types/web-push` (TypeScript types). |
+| `src/types/index.ts` | Added 3 new interfaces: `ReminderPreferences` (timezone, push/email toggles, default reminder time), `PushSubscriptionPayload` (endpoint + encryption keys), and `SettingsVM` (user profile + preferences — the view model returned by `GET /api/settings`). |
+| `src/app/(app)/settings/page.tsx` | **New file** — Full Settings page. Shows user profile card (name, email, Google avatar via `next/image`), push notification toggle (wired to `usePush` hook), email reminder toggle, reminder time selector (13 preset times from 6 AM–10 PM), timezone picker (15 common timezones, auto-detects on first load via `Intl.DateTimeFormat().resolvedOptions().timeZone`), collapsible PWA install guide for iOS/Android, and sign-out button. Skeleton loaders during fetch. Floating "Saving..." toast on preference changes. |
+| `src/app/api/settings/route.ts` | **New file** — `GET` returns `SettingsVM` by fetching user metadata from `supabase.auth.getUser()` and preferences from `reminder_preferences` table (falls back to defaults if no row). `PATCH` validates with Zod, then upserts partial updates using `onConflict: "user_id"` — only provided fields are written. Maps camelCase inputs (`pushEnabled`) to snake_case DB columns (`push_enabled`). |
+| `src/app/api/notifications/register/route.ts` | **New file** — `POST` saves a browser push subscription (endpoint + p256dh + auth keys) to `push_subscriptions` table. Uses delete-then-insert as an upsert since there's no unique constraint on endpoint. `DELETE` removes a subscription by endpoint when user turns push off. Both require auth. |
+| `src/app/api/reminders/dispatch/route.ts` | **New file** — The cron engine. Protected by `CRON_SECRET` bearer token. Flow: (1) fetch all users with push or email enabled from `reminder_preferences`, (2) fetch their non-archived habits, (3) fetch their push subscriptions, (4) for each user, compute current `HH:MM` in their timezone using `Intl.DateTimeFormat("en-GB", { timeZone })`, (5) match habits whose `reminder_time` (or `default_reminder_time`) equals current time, (6) send push via `web-push` and/or email via `resend`, (7) auto-delete stale push subscriptions (410/404 responses). Uses `supabaseAdmin` to read across all users. |
+| `src/hooks/use-push.ts` | **New file** — Client-side React hook for the full push lifecycle. On mount: checks browser support (`serviceWorker` + `PushManager` + `Notification`), reads current `Notification.permission`, checks for existing subscription via `pushManager.getSubscription()`. `subscribe()`: requests permission, converts VAPID public key from URL-safe base64 to `Uint8Array` via `urlBase64ToUint8Array()`, calls `pushManager.subscribe()`, then POSTs the subscription to `/api/notifications/register`. `unsubscribe()`: DELETEs from server first, then calls `subscription.unsubscribe()`. Includes a 5-second timeout fallback so the toggle isn't stuck disabled if `serviceWorker.ready` hangs. |
+| `src/lib/supabase/admin.ts` | **New file** — Creates a Supabase client using the `SUPABASE_SERVICE_ROLE_KEY` which bypasses Row-Level Security. Only used in the cron dispatch endpoint where we need to read habits/subscriptions across all users. |
+| `src/lib/validations/settings.ts` | **New file** — Zod schema for `PATCH /api/settings`. Validates `timezone` (1-100 chars), `pushEnabled` (boolean), `emailEnabled` (boolean), `defaultReminderTime` (regex `/^\d{2}:\d{2}$/`). All fields `.optional()` for partial updates. |
+| `src/lib/validations/push-subscription.ts` | **New file** — Two Zod schemas: `pushSubscriptionSchema` for POST (endpoint URL + p256dh + auth, all required) and `deletePushSubscriptionSchema` for DELETE (endpoint only). |
+| `src/components/ui/switch.tsx` | **New file** — Toggle switch component (shadcn). Used for push/email on/off toggles. |
+| `src/components/ui/select.tsx` | **New file** — Select dropdown component (shadcn). Used for timezone and reminder time pickers. |
+| `src/components/ui/label.tsx` | **New file** — Form label component (shadcn). Used in Settings toggles. |
+| `src/components/ui/collapsible.tsx` | **New file** — Collapsible component (shadcn). Used for the PWA install guide section. |
+| `vercel.json` | **New file** — Configures a Vercel Cron Job: `"/api/reminders/dispatch"` runs every minute (`"* * * * *"`). Vercel automatically passes the `CRON_SECRET` as the bearer token. |
+| `src/components/bottom-nav.tsx` | Removed "Insights" nav item and `BarChart3` icon import. The `/insights` page doesn't exist yet, so Next.js was prefetching it and logging 404 errors in the console on every page load. |
+
+### Bugs fixed
+1. **Console 404 on `/insights`**: The bottom nav had an "Insights" link to a route that doesn't exist. Next.js prefetches linked routes via React Server Components (`_rsc` param), causing 404s in the console. Fix: removed the nav item until the page is built.
+2. **`AbortError: Registration failed - push service error`**: The `applicationServerKey` was passed as `urlBase64ToUint8Array(vapidKey).buffer` — but `Uint8Array.buffer` can return a larger `ArrayBuffer` than the actual key data (the `Uint8Array` may be a view at an offset). Fix: use `buffer.slice(byteOffset, byteOffset + byteLength)` to extract an exact 65-byte `ArrayBuffer`.
+3. **Invalid VAPID keys**: The original keys in `.env.local` were not a valid public/private pair. Regenerated with `npx web-push generate-vapid-keys --json`.
+
+### Environment variables added
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Public VAPID key for Web Push (used client-side + dispatch) |
+| `VAPID_PRIVATE_KEY` | Private VAPID key for signing push messages (server-only) |
+| `VAPID_EMAIL` | Contact email for VAPID (`mailto:...`) |
+| `RESEND_API_KEY` | Resend API key for sending email reminders |
+| `CRON_SECRET` | Bearer token to authorize cron job requests |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key that bypasses RLS (server-only) |
+
+### Key patterns used
+- **Cron-based reminder dispatch**: Instead of scheduling individual reminders, a single cron job runs every minute, fetches all users, and checks whose habits match the current time. Simple, stateless, no job queue needed.
+- **Timezone-aware time matching**: `Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false })` converts UTC `new Date()` to the user's local `HH:MM`. Compared directly against `reminder_time` strings.
+- **Upsert with `onConflict`**: `supabase.from("reminder_preferences").upsert(updates, { onConflict: "user_id" })` inserts a new row on first save, updates on subsequent saves. One code path for both cases.
+- **Stale subscription cleanup**: When `webpush.sendNotification()` returns 410 (Gone) or 404, the subscription is expired (user uninstalled browser, cleared data, etc.). Collecting IDs and batch-deleting keeps the table clean automatically.
+- **Service role client for cross-user queries**: Normal Supabase clients are scoped to the logged-in user via RLS. The cron endpoint needs to read all users' data, so it uses a service role client that bypasses RLS. This is kept in a separate file (`admin.ts`) to make it obvious and auditable.
+
+### Concepts learned
+- **Web Push architecture**: Three parties involved — your server, the push service (FCM for Chrome, Mozilla for Firefox), and the browser. Your server sends a signed message to the push service, which delivers it to the browser. The service worker's `push` event handler displays it as a notification. VAPID keys identify your server to the push service.
+- **VAPID keys**: A public/private key pair (P-256 elliptic curve). The public key is shared with the browser during `pushManager.subscribe()`. The private key signs the push message on the server so the push service can verify it came from you.
+- **`urlBase64ToUint8Array`**: VAPID public keys are encoded as URL-safe base64 (replacing `+/` with `-_`). The Push API's `applicationServerKey` expects raw bytes (`ArrayBuffer` or `Uint8Array`), so you must decode: restore standard base64 chars, `atob()` decode, then map char codes into a `Uint8Array`.
+- **`Uint8Array.buffer` pitfall**: A `Uint8Array`'s `.buffer` property returns the *underlying* `ArrayBuffer`, which may be larger than the typed array's view. If the `Uint8Array` was created with an offset, `.buffer` includes bytes before and after the view. Always use `.buffer.slice(byteOffset, byteOffset + byteLength)` to get an exact copy.
+- **Vercel Cron Jobs**: Defined in `vercel.json` under `crons`. Vercel calls the specified path as a GET request on the schedule. The `CRON_SECRET` env var is auto-injected as a bearer token for authentication. Minimum interval is 1 minute on Pro plan.
+- **Resend for transactional email**: Resend provides a simple `emails.send()` API. Requires a verified sending domain in production. The `from` address must match a verified domain (e.g., `reminders@loopzi.app`).
+- **`Intl.DateTimeFormat` for timezone conversion**: Instead of pulling in a timezone library like `moment-timezone`, the browser/Node.js built-in `Intl.DateTimeFormat` can format a `Date` in any IANA timezone. Using `{ hour: "2-digit", minute: "2-digit", hour12: false }` gives exact `HH:MM` output for time matching.
+- **macOS notification permissions**: Even if a browser grants notification permission, macOS can block notifications at the OS level (System Settings → Notifications → [Browser]). This causes `pushManager.subscribe()` to fail with `AbortError: Registration failed - push service error` — a confusing error that looks like a VAPID key issue.
+
+---
+
 ## Step 7 — History View (Mar 4, 2026)
 
 ### What was done
